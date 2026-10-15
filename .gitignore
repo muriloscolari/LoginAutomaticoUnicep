@@ -1,3 +1,7 @@
+# Binários compilados C
+/login_portal
+*.o
+
 # Arquivos de dump de rede e tráfego
 dump.txt
 *.dump
