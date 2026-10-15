@@ -1,0 +1,13 @@
+[Unit]
+Description=Auto-Login Portal Captivo UniFi (Faculdade)
+After=network.target
+
+[Service]
+Type=simple
+Environment=PYTHONUNBUFFERED=1
+ExecStart=%h/Documentos/loginAutomatico/login_portal.py --daemon
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target

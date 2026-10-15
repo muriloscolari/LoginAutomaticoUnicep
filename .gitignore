@@ -1,0 +1,16 @@
+# Arquivos de dump de rede e tráfego
+dump.txt
+*.dump
+*.pcap
+*.log
+
+# Cache do Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Arquivos de ambiente e temporários
+*.swp
+*.swo
+*~
+.DS_Store
