@@ -216,10 +216,17 @@ def attempt_login(iface, force=False, quiet=False):
     if not quiet:
         print(f"[i] Resposta do login: HTTP {login_code}")
 
-    # Aguarda 1.5s para aplicação das regras no AP UniFi
-    time.sleep(1.5)
+    # Aguarda a controladora UniFi propagar a liberação para o AP físico (até 5 tentativas de 1.2s)
+    has_internet = False
+    code = "000"
+    for attempt in range(1, 6):
+        time.sleep(1.2)
+        has_internet, code, _ = check_internet(iface)
+        if has_internet:
+            break
+        if not quiet:
+            print(f"[...] Aguardando propagação no AP (tentativa {attempt}/5: HTTP {code})...")
 
-    has_internet, code, _ = check_internet(iface)
     if has_internet:
         if not quiet:
             print("[✓] Login efetuado com sucesso! Internet liberada.")

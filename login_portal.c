@@ -110,9 +110,13 @@ static void get_active_wifi_interface(char *out_iface, size_t maxlen) {
     if (!dir) return;
 
     char fallback[IFNAMSIZ] = {0};
+    char candidate_with_ip[IFNAMSIZ] = {0};
     struct dirent *entry;
+
     while ((entry = readdir(dir)) != NULL) {
         if (entry->d_name[0] == '.') continue;
+        /* Ignora interfaces virtuais conhecidas de hotspot/p2p */
+        if (strncmp(entry->d_name, "p2p", 3) == 0) continue;
 
         char path1[512], path2[512];
         snprintf(path1, sizeof(path1), "/sys/class/net/%s/wireless", entry->d_name);
@@ -120,19 +124,35 @@ static void get_active_wifi_interface(char *out_iface, size_t maxlen) {
 
         struct stat st;
         if (stat(path1, &st) == 0 || stat(path2, &st) == 0) {
-            if (fallback[0] == '\0') {
-                snprintf(fallback, sizeof(fallback), "%.*s", IFNAMSIZ - 1, entry->d_name);
-            }
-            if (iface_has_ipv4(entry->d_name)) {
+            char ssid[IW_ESSID_MAX_SIZE + 1];
+            bool has_ssid = get_active_ssid(entry->d_name, ssid, sizeof(ssid));
+            bool has_ip = iface_has_ipv4(entry->d_name);
+
+            /* Interface conectada a uma rede Wi-Fi como cliente com IP ativo */
+            if (has_ssid && has_ip) {
                 snprintf(out_iface, maxlen, "%.*s", (int)(maxlen - 1), entry->d_name);
                 closedir(dir);
                 return;
             }
+
+            if (has_ip && candidate_with_ip[0] == '\0') {
+                snprintf(candidate_with_ip, sizeof(candidate_with_ip), "%.*s", (int)(sizeof(candidate_with_ip) - 1), entry->d_name);
+            }
+
+            if (fallback[0] == '\0') {
+                snprintf(fallback, sizeof(fallback), "%.*s", IFNAMSIZ - 1, entry->d_name);
+            }
         }
     }
     closedir(dir);
+
+    /* Se wlan0 estiver presente, prefere ela a interfaces de tethering (como ap0) */
     if (fallback[0] != '\0') {
-        snprintf(out_iface, maxlen, "%.*s", (int)(maxlen - 1), fallback);
+        if (candidate_with_ip[0] != '\0' && strncmp(candidate_with_ip, "ap", 2) != 0) {
+            snprintf(out_iface, maxlen, "%.*s", (int)(maxlen - 1), candidate_with_ip);
+        } else {
+            snprintf(out_iface, maxlen, "%.*s", (int)(maxlen - 1), fallback);
+        }
     }
 }
 
@@ -480,11 +500,26 @@ static bool attempt_login(const char *iface, bool force, bool quiet) {
         printf("[i] Resposta do login: HTTP %d\n", login_code);
     }
 
-    /* Aguarda 1.5s para o AP UniFi liberar as regras de firewall */
-    usleep(1500000);
+    /*
+     * Aguarda e verifica com retentativas se o AP UniFi liberou o tráfego.
+     * Em redes corporativas com múltiplos APs, a controladora pode levar entre 2 a 6 segundos
+     * para propagar as regras de firewall (ebtables/iptables) para o rádio físico.
+     */
+    int after_code = 0;
+    bool liberated = false;
+    for (int attempt = 1; attempt <= 5; attempt++) {
+        usleep(1200000); /* 1.2s entre cada checagem (total de até 6s) */
+        after_code = check_and_discover(iface, NULL, 0);
+        if (after_code == 204) {
+            liberated = true;
+            break;
+        }
+        if (!quiet) {
+            printf("[...] Aguardando propagação no AP (tentativa %d/5: HTTP %d)...\n", attempt, after_code);
+        }
+    }
 
-    int after_code = check_and_discover(iface, NULL, 0);
-    if (after_code == 204) {
+    if (liberated) {
         if (!quiet) {
             printf("[✓] Login efetuado com sucesso! Internet liberada.\n");
         }
